@@ -31,17 +31,20 @@ class Client:
 
         dataset = self.reader()
 
-        data = {}
+        data = dict()
         if dataset == "":  # В задании просили:  если данных нет, то позвращать пустой словарь
             return data
 
         for row in dataset.split("\n"):  # итерируюсь по данным и присваиваю их к необходимым переменным
-            key, value, timestamp = row.split()
+            try:
+                key, value, timestamp = row.split()
+            except ValueError as err:
+                raise ClientError('this is sparta', err)
             if key not in data:
                 data[key] = []
             data[key].append((int(timestamp), float(value)))
 
-        return sorted(data)  # возвращаем отсортированные данные, пока не указал как
+        return data  # возвращаем отсортированные данные, пока не указал как
 
     def reader(self):
         """Метод для чтения данных, полученых от сервера"""
