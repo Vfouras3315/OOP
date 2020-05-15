@@ -1,6 +1,7 @@
 import socket
 import time
-from operator import itemgetter
+from collections import OrderedDict
+from operator import itemgetter, attrgetter
 
 
 class Client:
@@ -32,6 +33,7 @@ class Client:
         dataset = self.reader()
 
         data = dict()
+
         if dataset == "":  # В задании просили:  если данных нет, то позвращать пустой словарь
             return data
 
@@ -40,11 +42,16 @@ class Client:
                 key, value, timestamp = row.split()
             except ValueError as err:
                 raise ClientError('this is sparta', err)
+
             if key not in data:
                 data[key] = []
+
             data[key].append((int(timestamp), float(value)))
 
-        return data  # возвращаем отсортированные данные, пока не указал как
+            sorted_data = dict()
+            sorted_data[key] = sorted(data.get(key), key=itemgetter(0))
+
+        return sorted_data
 
     def reader(self):
         """Метод для чтения данных, полученых от сервера"""
@@ -71,3 +78,12 @@ class Client:
 class ClientError(Exception):
     """Клиентская ошибка"""
     pass
+
+if __name__ == '__main__':
+    client = Client('127.0.0.1', 8888)
+#    client.put('palm.cpu', 13.045, 1501865247)
+#    client.put('palm.cpu', 10.5, 1501864247)
+#    client.put('palm.cpu', 11.0, 1501864243)
+#    client.put('palm.cpu', 22.5, 1501864248)
+    client.get('palm.cpu')
+    client.close()
