@@ -1,8 +1,6 @@
 import socket
 import time
-from collections import OrderedDict
-from operator import itemgetter, attrgetter
-
+import pdb
 
 class Client:
     def __init__(self, host, port, timeout=None):
@@ -48,10 +46,11 @@ class Client:
 
             data[key].append((int(timestamp), float(value)))
 
-            sorted_data = dict()
-            sorted_data[key] = sorted(data.get(key), key=itemgetter(0))
+            result = {}
+            for key, timestamp_data in data.items():
+                result[key] = sorted(timestamp_data)
 
-        return sorted_data
+        return result
 
     def reader(self):
         """Метод для чтения данных, полученых от сервера"""
@@ -80,10 +79,6 @@ class ClientError(Exception):
     pass
 
 if __name__ == '__main__':
-    client = Client('127.0.0.1', 8888)
-#    client.put('palm.cpu', 13.045, 1501865247)
-#    client.put('palm.cpu', 10.5, 1501864247)
-#    client.put('palm.cpu', 11.0, 1501864243)
-#    client.put('palm.cpu', 22.5, 1501864248)
-    client.get('palm.cpu')
+    client = Client('127.0.0.1', 10002)
+    client.get('test_key')
     client.close()

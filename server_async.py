@@ -1,7 +1,6 @@
 import asyncio
 import pdb
 
-
 class Storage:
 
     def __init__(self):
@@ -10,19 +9,33 @@ class Storage:
     def put(self, key, value, timestamp):
         if key not in self.data:
             self.data[key] = {}
-        self.data[key] = timestamp, value
+        self.data[key][timestamp] = value
+
 
     def get(self, key):
-        if key != '*':
-            self.data = {key: self.data.get(key)}
+        data = self.data
+        if key == '':
+            raise ValueError
+        elif key != '*':
+            data = {key: data.get(key, {})}
 
-        # тут будет сортировка
 
-        return self.data
+        result = {}
+        for key, timestamp_data in data.items():
+            result[key] = sorted(timestamp_data.items())
 
+        return result
+
+class DecoderError(ValueError):
+    pass
+
+class InterfaceError(Exception):
+    pass
 
 
 class Protocol(asyncio.Protocol):
+
+    storage = Storage()
 
     def connection_made(self, transport):
         """Вызывается при установлении соединения.
@@ -33,47 +46,97 @@ class Protocol(asyncio.Protocol):
 
 
     def data_received(self, data):
+
         """Вызывается когда поступают данные
         Аргументы принемаются в байтах"""
+        buffer = b''
+        buffer += data
+        try:
+            decoded_data = buffer.decode('utf-8')
+        except UnicodeDecodeError:
+            return
 
-        while not data.endswith(b'\n'):
-            accum_data += data
+        if not decoded_data.endswith('\n'):
+            return
+        try:
+            if decoded_data.isspace():
+                raise ValueError("wrong command")
 
-        command = self.decode(data)
-        resp = self.interface_storage(command)
-        self.transport.write(self.encode(resp))
+        except ValueError as err:
+            self.transport.write(f"error\n{err}\n\n".encode())
+            return
+
+        # отправляем на разбор
+        try:
+            commands = self.decode(decoded_data)
+            if decoded_data == False:
+                raise ValueError("wrong command")
+        except ValueError as err:
+            self.transport.write(f"error\n{err}\n\n".encode())
+            return
+
+        # выполняем команды и запоминаем результаты выполнения
+        responses = []
+        for command in commands:  # каждый tuple в списке отправляется в executor.run
+            resp = self.interface_storage(*command)
+            responses.append(resp)
+
+        # собираем ответ для отправки
+        response = self.encode(responses)
+
+        # отправляем
+        self.transport.write(response.encode())
+
+    def interface_storage(self, method, *params):
+
+        if method == 'put':
+            response = self.storage.put(*params)
+        elif method == 'get':
+            response =  self.storage.get(*params)
+        else:
+            raise InterfaceError("Unsupported method")
+
+        return response
+
+    def valid(self, params):
+        params = list(params)
+        for lis in params:
+            if params == '*':
+                continue
+            elif lis.isspace():
+                raise ValueError
+        return True
 
 
-
-    def interface_storage(self, result_list):
-
-        if result_list[0] == 'put':
-            del result_list[0]
-            result = Storage.put(result_list)
-        elif result_list[1] == 'get':
-            del result_list[0]
-            result = Storage.get(result_list)
-
-        return result
 
     def decode(self, data):
-        decode_data = data.decode('utf-8')
-        command, dataset = data.split(" ", 1)
-        result_list = []
-        if command == 'put':
-            key, value, timestamp = dataset.split()
-            result_list.append(command, key, value, timestamp)
-        elif command == 'get':
-            key = dataset
-            result_list.append(command, key)
-        else:
-            raise ValueError
+        parts = data.split("\n")
 
-        return result_list
+        commands = []
+
+        for part in parts:
+            if not part:
+                continue
+            try:
+                method, params = part.split(" ", 1)
+                if method == 'put':
+                    key, value, timestamp = params.split()
+                    commands.append((method, key, float(value), int(timestamp)))
+                elif method == 'get':
+                    if self.valid(params):
+                        key = params
+                        commands.append((method, key))
+                    else:
+                        raise ValueError("unknown params")
+                else:
+                    raise ValueError("unknown method")
+            except ValueError:
+                raise DecoderError("wrong command")
+
+        return commands
 
     def encode(self, resp):
         set = []
-
         for response in resp:
             if not response:
                 continue
@@ -86,24 +149,22 @@ class Protocol(asyncio.Protocol):
         if set:
             result += "\n".join(set) + "\n"
 
-        return (result + "\n").encode()
+        return (result + "\n")
 
 
 def run_server(host, port):
 
-    loop = asyncio.get_event_loop()  # получаем event loop
-    coro = asyncio.create_server(Protocol, host, port)  # запускаем корутину на адрес
-    server = loop.run_until_complete(coro)  # выполняем пока не завершится
+    loop = asyncio.get_event_loop()
+    coro = loop.create_server(Protocol, host, port)
+    server = loop.run_until_complete(coro)
     try:
-        loop.run_forever()  # обрабатываем все входящие соединения и запускаем для каждого корутину
+        loop.run_forever()
     except KeyboardInterrupt:
         pass
 
     server.close()
-    loop.run_until_complete(server.wait_close())
+    loop.run_until_complete(server.wait_closed())
     loop.close()
 
-
-if __name__ is '__main__':
-    pdb.set_trace()
+if __name__ == '__main__':
     run_server('127.0.0.1', 8888)
